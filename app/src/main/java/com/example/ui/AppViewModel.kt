@@ -38,6 +38,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs = context.getSharedPreferences("h2hub_prefs", Context.MODE_PRIVATE)
     private val database = AppDatabase.getDatabase(context)
     private val repository = AppRepository(database.appDao())
+    private val cloudMemoryUsername: String
+        get() = prefs.getString("cloud_memory_username", "").orEmpty()
 
     // Text to Speech Fallback (Android Native)
     private var textToSpeech: TextToSpeech? = null
@@ -302,6 +304,23 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             } finally {
                 _isGeneratingChat.value = false
             }
+        }
+    }
+
+    fun submitAnswerFeedback(message: ChatMessage, rating: String, reason: String? = null) {
+        val question = _currentMessages.value
+            .getOrNull(_currentMessages.value.indexOf(message) - 1)
+            ?.content
+            .orEmpty()
+        viewModelScope.launch {
+            GeminiApiClient.submitFeedback(
+                username = cloudMemoryUsername,
+                messageId = message.id,
+                rating = rating,
+                question = question,
+                answer = message.content,
+                reason = reason
+            )
         }
     }
 

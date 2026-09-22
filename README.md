@@ -12,9 +12,13 @@ View your app in AI Studio: https://ai.studio/apps/776352a4-6d27-43d0-aaf9-e9e22
 
 **Prerequisites:**  Node.js
 
-
 1. Install dependencies:
    `npm install`
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
+3. Run the app in development mode:
    `npm run dev`
+4. For a production-like serving test, run:
+   `npm run build`
+   `npm run start`
+
+The server now serves the React app correctly in both dev and production modes and keeps the API endpoints available under `/api/*` and `/v1beta/*`.

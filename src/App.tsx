@@ -41,25 +41,36 @@ export default function App() {
   const fetchCloudData = async (user: string) => {
     setSyncStatus("syncing");
     try {
-      const res = await fetch(`/api/sync/load?username=${user}`);
+      const res = await fetch(`/api/sync/load?username=${encodeURIComponent(user)}`);
       const result = await res.json();
-      
+
       if (res.ok && result.found && result.data) {
-        setTasks(result.data.tasks || []);
-        setPlannerEvents(result.data.plannerEvents || []);
+        setTasks(Array.isArray(result.data.tasks) ? result.data.tasks : []);
+        setPlannerEvents(Array.isArray(result.data.plannerEvents) ? result.data.plannerEvents : []);
         setSyncStatus("success");
         setSyncTime(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
-      } else {
-        // Fallback to local storage if no server-side sync file exists yet
-        const localTasks = localStorage.getItem(`hj_tasks_${user}`);
-        const localEvents = localStorage.getItem(`hj_events_${user}`);
-        
-        setTasks(localTasks ? JSON.parse(localTasks) : []);
-        setPlannerEvents(localEvents ? JSON.parse(localEvents) : []);
-        setSyncStatus("idle");
+        return;
       }
+
+      const localTasks = localStorage.getItem(`hj_tasks_${user}`);
+      const localEvents = localStorage.getItem(`hj_events_${user}`);
+
+      let parsedTasks: TaskItem[] = [];
+      let parsedEvents: PlannerEvent[] = [];
+      try {
+        parsedTasks = localTasks ? JSON.parse(localTasks) : [];
+        parsedEvents = localEvents ? JSON.parse(localEvents) : [];
+      } catch (parseError) {
+        console.error("Local sync data is corrupted, resetting fallback state:", parseError);
+      }
+
+      setTasks(Array.isArray(parsedTasks) ? parsedTasks : []);
+      setPlannerEvents(Array.isArray(parsedEvents) ? parsedEvents : []);
+      setSyncStatus("idle");
     } catch (e) {
       console.error("Cloud sync load failed, fallback to local storage:", e);
+      setTasks([]);
+      setPlannerEvents([]);
       setSyncStatus("error");
     }
   };

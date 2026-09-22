@@ -21,6 +21,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -70,32 +71,37 @@ fun AppUi(viewModel: AppViewModel) {
     val isAnimatingLogo = isSpeaking || isAnalyzing || isThinking
 
     val infiniteTransition = rememberInfiniteTransition(label = "logo_glow")
-    val glowAlpha by if (isAnimatingLogo) {
-        infiniteTransition.animateFloat(
-            initialValue = 0.3f,
-            targetValue = 1.0f,
-            animationSpec = infiniteRepeatable(
+    val glowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.0f,
+        targetValue = if (isAnimatingLogo) 1.0f else 0.0f,
+        animationSpec = if (isAnimatingLogo) {
+            infiniteRepeatable(
                 animation = tween(800, easing = LinearEasing),
                 repeatMode = RepeatMode.Reverse
-            ),
-            label = "logoGlowAlpha"
-        )
-    } else {
-        remember { mutableStateOf(0.0f) }
-    }
-    val scale by if (isAnimatingLogo) {
-        infiniteTransition.animateFloat(
-            initialValue = 1.0f,
-            targetValue = 1.15f,
-            animationSpec = infiniteRepeatable(
+            )
+        } else {
+            tween(0)
+        },
+        label = "logoGlowAlpha"
+    )
+    val animatedScale by infiniteTransition.animateFloat(
+        initialValue = 1.0f,
+        targetValue = if (isAnimatingLogo) 1.15f else 1.0f,
+        animationSpec = if (isAnimatingLogo) {
+            infiniteRepeatable(
                 animation = tween(600, easing = FastOutSlowInEasing),
                 repeatMode = RepeatMode.Reverse
-            ),
-            label = "logoScale"
-        )
-    } else {
-        remember { mutableStateOf(1.0f) }
-    }
+            )
+        } else {
+            tween(0)
+        },
+        label = "logoScale"
+    )
+    val scale by animateFloatAsState(
+        targetValue = if (isAnimatingLogo) animatedScale else 1.0f,
+        animationSpec = tween(0),
+        label = "logoScaleSettled"
+    )
 
     // Navigation back handling
     if (currentScreen != AppScreen.HOME) {
