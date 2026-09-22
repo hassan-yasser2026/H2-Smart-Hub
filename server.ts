@@ -1,7 +1,7 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { createServer as createViteServer } from "vite";
+import { createServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 
@@ -9,6 +9,10 @@ dotenv.config();
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
+const TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || "gemini-3.6-flash";
+const LATEST_TEXT_MODEL = "gemini-3.6-flash";
+const IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-image";
+const TTS_MODEL = process.env.GEMINI_TTS_MODEL || "gemini-2.5-flash-preview-tts";
 
 // Initialize Google Gen AI securely on the server
 const ai = new GoogleGenAI({
@@ -28,21 +32,49 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
-app.post("/v1beta/models/*", async (req, res) => {
+app.post(/^\/v1beta\/models\/([^/]+):(generateContent|generateVideos)$/, async (req, res) => {
   if (!process.env.GEMINI_API_KEY) {
     return res.status(500).json({ error: "GEMINI_API_KEY is not configured." });
   }
 
   try {
-    const target = new URL(`https://generativelanguage.googleapis.com${req.originalUrl}`);
-    target.searchParams.set("key", process.env.GEMINI_API_KEY);
-    const upstream = await fetch(target, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(req.body),
-    });
-    const body = await upstream.text();
-    res.status(upstream.status).type(upstream.headers.get("content-type") || "application/json").send(body);
+    const requestPath = req.path;
+    const requestedModel = req.params[0];
+    const operation = req.params[1];
+    const isTextRequest = requestPath.endsWith(":generateContent") &&
+      !requestedModel?.includes("image") &&
+      !requestedModel?.includes("tts");
+    const resolvedPath = isTextRequest && requestedModel !== TEXT_MODEL
+      ? requestPath.replace(`/models/${requestedModel}`, `/models/${TEXT_MODEL}`)
+      : requestPath;
+    const query = req.originalUrl.includes("?")
+      ? req.originalUrl.slice(req.originalUrl.indexOf("?"))
+      : "";
+    const pathsToTry = [resolvedPath];
+    if (isTextRequest && !resolvedPath.includes(`/models/${LATEST_TEXT_MODEL}`)) {
+      pathsToTry.push(resolvedPath.replace(/\/models\/[^/:]+/, `/models/${LATEST_TEXT_MODEL}`));
+    }
+
+    let upstream: Response | undefined;
+    let body = "";
+    for (const pathToTry of pathsToTry) {
+      const target = new URL(`https://generativelanguage.googleapis.com${pathToTry}${query}`);
+      target.searchParams.set("key", process.env.GEMINI_API_KEY);
+      upstream = await fetch(target, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(req.body),
+      });
+      body = await upstream.text();
+      if (upstream.status !== 404 || pathToTry === pathsToTry[pathsToTry.length - 1]) {
+        break;
+      }
+    }
+
+    console.log(`Gemini proxy ${operation}: ${requestedModel} -> ${upstream?.url} (${upstream?.status})`);
+    res.status(upstream?.status || 502)
+      .type(upstream?.headers.get("content-type") || "application/json")
+      .send(body);
   } catch (error) {
     console.error("Gemini proxy request failed:", error);
     res.status(502).json({ error: "Unable to contact the Gemini service." });
@@ -183,7 +215,7 @@ Now, execute your role with distinction.`;
 
     // Request response from Gemini
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: TEXT_MODEL,
       contents,
       config: {
         systemInstruction,
@@ -203,6 +235,11 @@ Now, execute your role with distinction.`;
   } catch (error: any) {
     console.error("Chat API Error:", error);
     const errString = error?.message?.toLowerCase() || "";
+    if (errString.includes("404") || errString.includes("not found") || errString.includes("model")) {
+      return res.status(502).json({
+        error: `نموذج Gemini غير متاح حالياً. تحقق من اسم النموذج أو غيّره عبر GEMINI_TEXT_MODEL (المستخدم حالياً: ${TEXT_MODEL}).`,
+      });
+    }
     if (errString.includes("safety") || errString.includes("block") || errString.includes("candidate") || errString.includes("finishreason")) {
       return res.status(400).json({ 
         error: "⚠️ تم حظر هذا الملف أو المحتوى بواسطة نظام الحماية الصارم (Strict Safety Layer). يمنع تماماً رفع صور غير أخلاقية أو عارية أو مواد خادشة للحياء." 
@@ -233,7 +270,7 @@ Provide:
 Please write the summary in highly professional Arabic (or English if the document is strictly English).`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: TEXT_MODEL,
       contents: [
         { text: summaryPrompt },
         { text: documentText }
@@ -273,7 +310,7 @@ Include:
 Please write this research study beautifully with markdown. Keep it strictly professional, well-formatted, and completely unique. Prevent any direct copy/paste elements from external cheating worksheets.`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: TEXT_MODEL,
       contents: researchPrompt,
       config: {
         systemInstruction: "You are H&J academic lead and essay author. You produce extremely well-structured, cited, and unique research articles.",
@@ -311,7 +348,7 @@ JSON Format Requirement:
 Provide ONLY the JSON list. No surrounding explanation, no markdown tags.`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: TEXT_MODEL,
       contents: presentationPrompt,
       config: {
         responseMimeType: "application/json",
@@ -360,7 +397,7 @@ app.post("/api/tts", async (req, res) => {
 
     // Generate speech audio
     const response = await ai.models.generateContent({
-      model: "gemini-3.1-flash-tts-preview",
+      model: TTS_MODEL,
       contents: [{ parts: [{ text: `Read clearly: ${text}` }] }],
       config: {
         responseModalities: ["AUDIO"],
@@ -411,7 +448,7 @@ app.post("/api/image/generate", async (req, res) => {
     try {
       // Call Gemini Image Generator
       const response = await ai.models.generateContent({
-        model: "gemini-3.1-flash-lite-image",
+        model: IMAGE_MODEL,
         contents: {
           parts: [{ text: enhancedPrompt }]
         },
@@ -533,7 +570,7 @@ JSON Format Requirement:
 Provide ONLY the raw JSON list. Do not surround with markdown codes.`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: TEXT_MODEL,
       contents: plannerPrompt,
       config: {
         responseMimeType: "application/json",
@@ -563,21 +600,57 @@ Provide ONLY the raw JSON list. Do not surround with markdown codes.`;
   }
 });
 
-// Vite server integrations
 async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
+  const isProduction = process.env.NODE_ENV === "production" || process.env.npm_lifecycle_event === "start";
+  const distDir = path.join(process.cwd(), "dist");
+  const indexHtmlPath = path.join(process.cwd(), "index.html");
+
+  if (!isProduction && fs.existsSync(indexHtmlPath)) {
+    const vite = await createServer({
+      root: process.cwd(),
+      server: {
+        middlewareMode: true,
+      },
       appType: "spa",
     });
     app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+
+    app.get("*", async (req, res, next) => {
+      if (req.path.startsWith("/api/") || req.path.startsWith("/v1beta/") || req.path === "/health") {
+        return next();
+      }
+
+      try {
+        const template = fs.readFileSync(indexHtmlPath, "utf8");
+        const rendered = await vite.transformIndexHtml(req.originalUrl, template);
+        res.status(200).set({ "Content-Type": "text/html" }).end(rendered);
+      } catch (error) {
+        next(error);
+      }
     });
   }
+
+  if (isProduction && fs.existsSync(distDir)) {
+    app.use(express.static(distDir));
+
+    app.get("*", (req, res, next) => {
+      if (req.path.startsWith("/api/") || req.path.startsWith("/v1beta/") || req.path === "/health") {
+        return next();
+      }
+      res.sendFile(path.join(distDir, "index.html"));
+    });
+  }
+
+  app.use((req, res) => {
+    if (req.path.startsWith("/api/") || req.path.startsWith("/v1beta/")) {
+      return res.status(404).json({
+        error: "API route not found",
+        method: req.method,
+        path: req.path,
+      });
+    }
+    res.status(404).send("Not found");
+  });
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server is running on port ${PORT}`);

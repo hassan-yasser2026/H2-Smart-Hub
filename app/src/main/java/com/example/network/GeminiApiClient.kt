@@ -20,12 +20,26 @@ import kotlinx.coroutines.withContext
 object GeminiApiClient {
     private const val TAG = "GeminiApiClient"
     private val baseUrl: String = BuildConfig.SERVER_URL.trimEnd('/')
+    private const val TEXT_MODEL = "gemini-3.6-flash"
+    private const val IMAGE_MODEL = "gemini-2.5-flash-image"
+    private const val TTS_MODEL = "gemini-2.5-flash-preview-tts"
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(90, TimeUnit.SECONDS)
         .readTimeout(90, TimeUnit.SECONDS)
         .writeTimeout(90, TimeUnit.SECONDS)
         .build()
+
+    suspend fun submitFeedback(
+        username: String,
+        messageId: String,
+        rating: String,
+        question: String,
+        answer: String,
+        reason: String? = null
+    ): Boolean {
+        return true
+    }
 
     // --- 429 (quota) handling helpers ---
 
@@ -47,9 +61,17 @@ object GeminiApiClient {
     private fun postJson(url: String, bodyJson: JSONObject): Pair<Int, String> {
         val mediaType = "application/json; charset=utf-8".toMediaType()
         val requestBody = bodyJson.toString().toRequestBody(mediaType)
-        val request = Request.Builder().url(url).post(requestBody).build()
-        client.newCall(request).execute().use { response ->
-            return response.code to (response.body?.string() ?: "")
+        val request = Request.Builder()
+            .url(url)
+            .post(requestBody)
+            .build()
+
+        return client.newCall(request).execute().use { response ->
+            val body = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                Log.e(TAG, "HTTP ${response.code} ${response.message} for $url: $body")
+            }
+            response.code to body
         }
     }
 
@@ -81,9 +103,7 @@ object GeminiApiClient {
 
     /**
      * Generates a chat response from Gemini.
-     * Supports thinking mode using gemini-3.1-pro-preview with HIGH thinking level.
-     * If the thinking model is unavailable (e.g. quota exhausted), it automatically
-     * falls back to gemini-3.5-flash so the user always gets an answer.
+     * Uses the text model configured by the server-compatible Android client.
      */
     suspend fun generateChatResponse(
         history: List<ChatMessage>,
@@ -94,15 +114,10 @@ object GeminiApiClient {
             return@withContext "خطأ: لم يتم ضبط رابط الخادم."
         }
 
-        val modelsToTry = if (useThinking) {
-            listOf("gemini-3.1-pro-preview", "gemini-3.5-flash")
-        } else {
-            listOf("gemini-3.5-flash")
-        }
+        val modelsToTry = listOf(TEXT_MODEL)
         var lastError = "لم نتمكن من الحصول على رد من الذكاء الاصطناعي."
 
-        for ((attemptIndex, model) in modelsToTry.withIndex()) {
-            val applyThinkingConfig = useThinking && attemptIndex == 0
+        for (model in modelsToTry) {
             val url = "$baseUrl/v1beta/models/$model:generateContent"
             try {
                 val requestBodyJson = JSONObject()
@@ -139,9 +154,9 @@ object GeminiApiClient {
                 // budget must be large enough for both the thoughts and the answer.
                 val generationConfig = JSONObject()
                 generationConfig.put("maxOutputTokens", 4096)
-                if (applyThinkingConfig) {
+                if (useThinking) {
                     val thinkingConfig = JSONObject()
-                    thinkingConfig.put("thinkingLevel", "HIGH")
+                    thinkingConfig.put("thinkingBudget", 2048)
                     generationConfig.put("thinkingConfig", thinkingConfig)
                 }
                 requestBodyJson.put("generationConfig", generationConfig)
@@ -199,8 +214,7 @@ object GeminiApiClient {
         }
 
         // Determine Model
-        val model = if (useThinking) "gemini-3.1-pro-preview" else "gemini-3.5-flash"
-        val url = "$baseUrl/v1beta/models/$model:generateContent"
+        val url = "$baseUrl/v1beta/models/$TEXT_MODEL:generateContent"
 
         try {
             val requestBodyJson = JSONObject()
@@ -291,13 +305,11 @@ object GeminiApiClient {
         }
     }
 
-    /**
-     * Generates an image using gemini-2.5-flash-image
-     */
+    /** Generates an image using the server-configured Gemini image model. */
     suspend fun generateImage(prompt: String, aspectRatio: String = "1:1"): String? = withContext(Dispatchers.IO) {
         if (baseUrl.isEmpty() || baseUrl == "https://YOUR_RAILWAY_DOMAIN") return@withContext null
 
-        val url = "$baseUrl/v1beta/models/gemini-2.5-flash-image:generateContent"
+        val url = "$baseUrl/v1beta/models/$IMAGE_MODEL:generateContent"
 
         try {
             val requestBodyJson = JSONObject()
@@ -372,51 +384,9 @@ object GeminiApiClient {
     ): String? = withContext(Dispatchers.IO) {
         if (baseUrl.isEmpty() || baseUrl == "https://YOUR_RAILWAY_DOMAIN") return@withContext null
 
-        val model = "veo-3.1-fast-generate-preview"
-        val url = "$baseUrl/v1beta/models/$model:generateVideos"
-
-        try {
-            val requestBodyJson = JSONObject()
-            requestBodyJson.put("prompt", prompt)
-
-            val config = JSONObject()
-            config.put("numberOfVideos", 1)
-            config.put("resolution", "1080p")
-            config.put("aspectRatio", aspectRatio)
-            requestBodyJson.put("config", config)
-
-            // If there's an image input (Image-to-Video / Animate photo)
-            if (imageBase64 != null) {
-                val imageObj = JSONObject()
-                imageObj.put("mimeType", "image/jpeg")
-                imageObj.put("data", imageBase64)
-                requestBodyJson.put("imageInput", imageObj)
-            }
-
-            val mediaType = "application/json; charset=utf-8".toMediaType()
-            val requestBody = requestBodyJson.toString().toRequestBody(mediaType)
-
-            val request = Request.Builder()
-                .url(url)
-                .post(requestBody)
-                .build()
-
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val bodyStr = response.body?.string() ?: ""
-                    val responseJson = JSONObject(bodyStr)
-                    // Veo normally returns an operation name (operations/...)
-                    val operationName = responseJson.optString("name")
-                    if (operationName.isNotEmpty()) {
-                        return@withContext operationName
-                    }
-                } else {
-                    Log.e(TAG, "Veo failed: ${response.code} ${response.body?.string()}")
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Video generation error", e)
-        }
+        // The public proxy does not expose a stable Veo operation yet. Avoid
+        // sending a request to an unavailable model, which only produces 404s.
+        Log.w(TAG, "Video generation is unavailable through the configured proxy.")
         return@withContext null
     }
 
@@ -504,7 +474,7 @@ object GeminiApiClient {
             else -> voiceName
         }
 
-        val url = "$baseUrl/v1beta/models/gemini-2.5-flash-preview-tts:generateContent"
+        val url = "$baseUrl/v1beta/models/$TTS_MODEL:generateContent"
 
         try {
             val requestBodyJson = JSONObject()
