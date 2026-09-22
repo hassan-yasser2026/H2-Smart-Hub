@@ -14,6 +14,11 @@ const LATEST_TEXT_MODEL = "gemini-3.6-flash";
 const FALLBACK_TEXT_MODEL = "gemini-2.5-flash";
 const IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-image";
 const TTS_MODEL = process.env.GEMINI_TTS_MODEL || "gemini-2.5-flash-preview-tts";
+const DATABASE_URL =
+  process.env.DATABASE_URL ||
+  process.env.POSTGRES_URL ||
+  process.env.POSTGRES_URL_NON_POOLING ||
+  "";
 
 // Initialize Google Gen AI securely on the server
 const ai = new GoogleGenAI({
@@ -30,7 +35,7 @@ app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok" });
+  res.json({ status: "ok", databaseConfigured: Boolean(DATABASE_URL) });
 });
 
 app.post(/^\/v1beta\/models\/([^/]+):(generateContent|generateVideos)$/, async (req, res) => {
@@ -657,6 +662,11 @@ async function startServer() {
   });
 
   app.listen(PORT, "0.0.0.0", () => {
+    if (DATABASE_URL) {
+      console.log("PostgreSQL connection URL detected from Railway environment variables.");
+    } else {
+      console.warn("No PostgreSQL URL configured; file-based sync remains enabled.");
+    }
     console.log(`Server is running on port ${PORT}`);
   });
 }
