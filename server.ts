@@ -11,6 +11,7 @@ const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || "gemini-3.6-flash";
 const LATEST_TEXT_MODEL = "gemini-3.6-flash";
+const FALLBACK_TEXT_MODEL = "gemini-2.5-flash";
 const IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-image";
 const TTS_MODEL = process.env.GEMINI_TTS_MODEL || "gemini-2.5-flash-preview-tts";
 
@@ -53,6 +54,9 @@ app.post(/^\/v1beta\/models\/([^/]+):(generateContent|generateVideos)$/, async (
     const pathsToTry = [resolvedPath];
     if (isTextRequest && !resolvedPath.includes(`/models/${LATEST_TEXT_MODEL}`)) {
       pathsToTry.push(resolvedPath.replace(/\/models\/[^/:]+/, `/models/${LATEST_TEXT_MODEL}`));
+    }
+    if (isTextRequest && !pathsToTry.some((candidate) => candidate.includes(`/models/${FALLBACK_TEXT_MODEL}`))) {
+      pathsToTry.push(resolvedPath.replace(/\/models\/[^/:]+/, `/models/${FALLBACK_TEXT_MODEL}`));
     }
 
     let upstream: Response | undefined;

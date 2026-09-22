@@ -21,6 +21,7 @@ object GeminiApiClient {
     private const val TAG = "GeminiApiClient"
     private val baseUrl: String = BuildConfig.SERVER_URL.trimEnd('/')
     private const val TEXT_MODEL = "gemini-3.6-flash"
+    private const val FALLBACK_TEXT_MODEL = "gemini-2.5-flash"
     private const val IMAGE_MODEL = "gemini-2.5-flash-image"
     private const val TTS_MODEL = "gemini-2.5-flash-preview-tts"
 
@@ -114,7 +115,7 @@ object GeminiApiClient {
             return@withContext "خطأ: لم يتم ضبط رابط الخادم."
         }
 
-        val modelsToTry = listOf(TEXT_MODEL)
+        val modelsToTry = listOf(TEXT_MODEL, FALLBACK_TEXT_MODEL).distinct()
         var lastError = "لم نتمكن من الحصول على رد من الذكاء الاصطناعي."
 
         for (model in modelsToTry) {
@@ -189,6 +190,11 @@ object GeminiApiClient {
                             continue@attemptsLoop
                         }
                         lastError = RATE_LIMIT_MESSAGE
+                    } else if (code == 404 && model != modelsToTry.last()) {
+                        // A model can be unavailable for a particular API key or region.
+                        // Try the stable fallback before returning a misleading connection error.
+                        lastError = "نموذج المحادثة غير متاح، جارٍ تجربة النموذج الاحتياطي."
+                        break@attemptsLoop
                     } else {
                         lastError = "خطأ في الاتصال بالخادم ($code). الرجاء المحاولة لاحقاً."
                     }
