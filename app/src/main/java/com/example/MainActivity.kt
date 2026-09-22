@@ -6,10 +6,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Scaffold
-import androidx.compose.ui.Modifier
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
@@ -21,9 +17,6 @@ import com.google.android.gms.ads.MobileAds
 import kotlin.concurrent.thread
 
 class MainActivity : ComponentActivity() {
-    private val micPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* result handled lazily by features */ }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -34,7 +27,7 @@ class MainActivity : ComponentActivity() {
         // The mic is needed for Quran recitation analysis and voice input;
         // without this runtime request both features fail silently.
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), RECORD_AUDIO_PERMISSION_REQUEST_CODE)
         }
 
         setContent {
@@ -44,5 +37,9 @@ class MainActivity : ComponentActivity() {
                 AppUi(viewModel = viewModel)
             }
         }
+    }
+
+    private companion object {
+        const val RECORD_AUDIO_PERMISSION_REQUEST_CODE = 1001
     }
 }

@@ -45,6 +45,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     // MediaPlayer for Gemini Voice API
     private var mediaPlayer: MediaPlayer? = null
+    private var playbackFile: File? = null
 
     // MediaRecorder for Audio Transcription Simulation
     private var mediaRecorder: MediaRecorder? = null
@@ -256,53 +257,50 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (text.trim().isEmpty()) return
 
         viewModelScope.launch {
-            // 1. Insert user message to database
-            val userMsg = ChatMessage(
-                id = UUID.randomUUID().toString(),
-                sessionId = sessionId,
-                role = "user",
-                content = text,
-                timestamp = System.currentTimeMillis()
-            )
-            repository.insertMessage(userMsg)
-
-            // Update UI list immediately
-            val updatedList = _currentMessages.value.toMutableList()
-            updatedList.add(userMsg)
-            _currentMessages.value = updatedList
-
             _isGeneratingChat.value = true
-
-            // System instructions incorporating safety policies
-            val systemPrompt = """
-                أنت مساعد ذكي ومحاور متميز فائق السرعة في تطبيق H2 Hub يحمل اسم "Smart Cat".
-                أنت تتذكر سياق المحادثة بالكامل. أجب بلغة عربية فصيحة ومقنعة وسلسة.
-                $safetySystemInstruction
-            """.trimIndent()
-
-            val aiResponse = kotlinx.coroutines.withTimeoutOrNull(90_000) {
-                GeminiApiClient.generateChatResponse(
-                    history = updatedList,
-                    systemInstruction = systemPrompt,
-                    useThinking = useThinkingMode.value
+            try {
+                val userMsg = ChatMessage(
+                    id = UUID.randomUUID().toString(),
+                    sessionId = sessionId,
+                    role = "user",
+                    content = text,
+                    timestamp = System.currentTimeMillis()
                 )
-            } ?: "تعذر الحصول على رد خلال الوقت المتوقع. تحقق من اتصال الإنترنت وحاول مرة أخرى."
+                repository.insertMessage(userMsg)
 
-            // Insert AI response to database
-            val modelMsg = ChatMessage(
-                id = UUID.randomUUID().toString(),
-                sessionId = sessionId,
-                role = "model",
-                content = aiResponse,
-                timestamp = System.currentTimeMillis()
-            )
-            repository.insertMessage(modelMsg)
+                // The repository flow is the single source of truth for the UI.
+                val updatedList = _currentMessages.value + userMsg
+                val systemPrompt = """
+                    أنت مساعد ذكي ومحاور متميز فائق السرعة في تطبيق H2 Hub يحمل اسم "Smart Cat".
+                    أنت تتذكر سياق المحادثة بالكامل. أجب بلغة عربية فصيحة ومقنعة وسلسة.
+                    $safetySystemInstruction
+                """.trimIndent()
 
-            _isGeneratingChat.value = false
+                val aiResponse = kotlinx.coroutines.withTimeoutOrNull(90_000) {
+                    GeminiApiClient.generateChatResponse(
+                        history = updatedList,
+                        systemInstruction = systemPrompt,
+                        useThinking = useThinkingMode.value
+                    )
+                } ?: "تعذر الحصول على رد خلال الوقت المتوقع. تحقق من اتصال الإنترنت وحاول مرة أخرى."
 
-            // Auto-speak chat response if enabled
-            if (autoReadChatEnabled.value) {
-                speakText(aiResponse)
+                repository.insertMessage(
+                    ChatMessage(
+                        id = UUID.randomUUID().toString(),
+                        sessionId = sessionId,
+                        role = "model",
+                        content = aiResponse,
+                        timestamp = System.currentTimeMillis()
+                    )
+                )
+
+                if (autoReadChatEnabled.value) {
+                    speakText(aiResponse)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Chat generation failed", e)
+            } finally {
+                _isGeneratingChat.value = false
             }
         }
     }
@@ -314,7 +312,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             val title = if (prompt.length > 20) prompt.substring(0, 20) + "..." else prompt
-            val systemPrompt = when (type) {
+            try {
+                val systemPrompt = when (type) {
                 "research" -> """
                     أنت باحث أكاديمي محترف وخبير في كتابة المقالات البحثية العميقة والمنظمة.
                     اكتب بحثاً أو مقالاً شاملاً ومفصلاً في الموضوع المطروح مع الالتزام بالتقسيم الأكاديمي الرصين ومصطلحات دقيقة.
@@ -338,23 +337,27 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 else -> "أنت مساعد إنتاجي ذكي ومحترف."
             }
 
-            val fakeMessage = listOf(ChatMessage(UUID.randomUUID().toString(), "temp", "user", prompt))
-            val aiResponse = GeminiApiClient.generateChatResponse(
-                history = fakeMessage,
-                systemInstruction = systemPrompt,
-                useThinking = useThinkingMode.value
-            )
+                val fakeMessage = listOf(ChatMessage(UUID.randomUUID().toString(), "temp", "user", prompt))
+                val aiResponse = GeminiApiClient.generateChatResponse(
+                    history = fakeMessage,
+                    systemInstruction = systemPrompt,
+                    useThinking = useThinkingMode.value
+                )
 
-            val newDoc = ProductivityDoc(
-                id = UUID.randomUUID().toString(),
-                type = type,
-                title = title,
-                content = aiResponse,
-                timestamp = System.currentTimeMillis()
-            )
-            repository.insertProductivityDoc(newDoc)
-            _selectedDoc.value = newDoc
-            _isGeneratingProd.value = false
+                val newDoc = ProductivityDoc(
+                    id = UUID.randomUUID().toString(),
+                    type = type,
+                    title = title,
+                    content = aiResponse,
+                    timestamp = System.currentTimeMillis()
+                )
+                repository.insertProductivityDoc(newDoc)
+                _selectedDoc.value = newDoc
+            } catch (e: Exception) {
+                Log.e(TAG, "Productivity generation failed", e)
+            } finally {
+                _isGeneratingProd.value = false
+            }
         }
     }
 
@@ -833,25 +836,30 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun playBase64Audio(base64Str: String) {
         viewModelScope.launch(Dispatchers.IO) {
+            var tempFile: File? = null
             try {
                 val decodedBytes = Base64.decode(base64Str, Base64.DEFAULT)
                 val (playableBytes, extension) = preparePlayableAudio(decodedBytes)
-                val tempFile = File.createTempFile("tts_temp", extension, context.cacheDir)
-                FileOutputStream(tempFile).use { fos ->
+                tempFile = File.createTempFile("tts_temp", extension, context.cacheDir)
+                FileOutputStream(tempFile!!).use { fos ->
                     fos.write(playableBytes)
                 }
                 withContext(Dispatchers.Main) {
                     try {
                         mediaPlayer?.stop()
                         mediaPlayer?.release()
+                        playbackFile?.delete()
                     } catch (ex: Exception) {
                         Log.e(TAG, "Error cleaning old mediaPlayer", ex)
                     }
+                    playbackFile = tempFile
                     mediaPlayer = MediaPlayer().apply {
-                        setDataSource(tempFile.absolutePath)
+                        setDataSource(tempFile!!.absolutePath)
                         prepare()
                         setOnCompletionListener {
                             _isSpeaking.value = false
+                            tempFile?.delete()
+                            if (playbackFile == tempFile) playbackFile = null
                         }
                         start()
                     }
@@ -859,6 +867,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Play audio error", e)
+                tempFile?.delete()
                 withContext(Dispatchers.Main) {
                     _isSpeaking.value = false
                 }
@@ -870,8 +879,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         try {
             textToSpeech?.stop()
             mediaPlayer?.stop()
+            mediaPlayer?.release()
+            mediaPlayer = null
+            playbackFile?.delete()
+            playbackFile = null
         } catch (ex: Exception) {
             Log.e(TAG, "Error stopping media", ex)
+            mediaPlayer?.release()
+            mediaPlayer = null
+            playbackFile?.delete()
+            playbackFile = null
         }
         _isSpeaking.value = false
     }
@@ -1308,6 +1325,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         super.onCleared()
         textToSpeech?.shutdown()
         mediaPlayer?.release()
+        playbackFile?.delete()
         mediaRecorder?.release()
         try {
             speechRecognizer?.destroy()

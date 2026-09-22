@@ -970,6 +970,7 @@ fun ProductivityScreen(viewModel: AppViewModel) {
                 }
                 "saved" -> {
                     if (selectedDoc != null) {
+                        val doc = selectedDoc
                         // Display Single Document
                         Column(modifier = Modifier.fillMaxSize()) {
                             Row(
@@ -977,17 +978,17 @@ fun ProductivityScreen(viewModel: AppViewModel) {
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                IconButton(onClick = { viewModel.deleteProductivityDoc(selectedDoc!!.id) }) {
+                                IconButton(onClick = { doc?.id?.let(viewModel::deleteProductivityDoc) }) {
                                     Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red)
                                 }
                                 Text(
-                                    selectedDoc!!.title,
+                                    doc?.title.orEmpty(),
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 16.sp,
                                     modifier = Modifier.weight(1f),
                                     textAlign = TextAlign.End
                                 )
-                                Button(onClick = { viewModel.generateProductivityDoc("تحويل النص إلى صوت: " + selectedDoc!!.content, "speech") }, modifier = Modifier.padding(start = 8.dp)) {
+                                Button(onClick = { doc?.content?.let { viewModel.generateProductivityDoc("تحويل النص إلى صوت: $it", "speech") } }, modifier = Modifier.padding(start = 8.dp)) {
                                     Icon(Icons.Default.VolumeUp, contentDescription = "Listen")
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text("استمع")
@@ -1001,7 +1002,7 @@ fun ProductivityScreen(viewModel: AppViewModel) {
                                     .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
                                     .padding(16.dp)
                             ) {
-                                Text(selectedDoc!!.content, fontSize = 13.sp)
+                                Text(doc?.content.orEmpty(), fontSize = 13.sp)
                             }
                             Spacer(modifier = Modifier.height(12.dp))
                             Button(onClick = { viewModel.clearSelectedDoc() }, modifier = Modifier.fillMaxWidth()) {
@@ -1698,7 +1699,7 @@ fun OrganizerScreen(viewModel: AppViewModel) {
                     .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
                     .padding(16.dp)
             ) {
-                Text(schedule!!.scheduleText, fontSize = 13.sp)
+                Text(schedule?.scheduleText.orEmpty(), fontSize = 13.sp)
             }
         }
     }
@@ -2227,4 +2228,3 @@ fun VoiceSetupDialog(
         }
     )
 }
-
