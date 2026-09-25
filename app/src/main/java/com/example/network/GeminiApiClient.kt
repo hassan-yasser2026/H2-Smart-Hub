@@ -19,8 +19,9 @@ import kotlinx.coroutines.withContext
 
 object GeminiApiClient {
     private const val TAG = "GeminiApiClient"
-    private val baseUrl: String = BuildConfig.SERVER_URL.trimEnd('/')
-    private const val TEXT_MODEL = "gemini-3.6-flash"
+    private const val BASE_URL = "https://generativelanguage.googleapis.com"
+    private val apiKey: String = BuildConfig.GEMINI_API_KEY.trim()
+    private const val TEXT_MODEL = "gemini-2.5-flash"
     private const val FALLBACK_TEXT_MODEL = "gemini-2.5-flash"
     private const val IMAGE_MODEL = "gemini-2.5-flash-image"
     private const val TTS_MODEL = "gemini-2.5-flash-preview-tts"
@@ -60,10 +61,13 @@ object GeminiApiClient {
 
     /** Executes one POST and returns HTTP code + body. */
     private fun postJson(url: String, bodyJson: JSONObject): Pair<Int, String> {
+        if (apiKey.isEmpty() || apiKey == "YOUR_GEMINI_API_KEY") {
+            return 500 to "GEMINI_API_KEY is not configured."
+        }
         val mediaType = "application/json; charset=utf-8".toMediaType()
         val requestBody = bodyJson.toString().toRequestBody(mediaType)
         val request = Request.Builder()
-            .url(url)
+            .url("$url?key=$apiKey")
             .post(requestBody)
             .build()
 
@@ -104,22 +108,22 @@ object GeminiApiClient {
 
     /**
      * Generates a chat response from Gemini.
-     * Uses the text model configured by the server-compatible Android client.
+     * Uses the text model configured for the Android client.
      */
     suspend fun generateChatResponse(
         history: List<ChatMessage>,
         systemInstruction: String,
         useThinking: Boolean = false
     ): String = withContext(Dispatchers.IO) {
-        if (baseUrl.isEmpty() || baseUrl == "https://YOUR_RAILWAY_DOMAIN") {
-            return@withContext "خطأ: لم يتم ضبط رابط الخادم."
+        if (apiKey.isEmpty() || apiKey == "YOUR_GEMINI_API_KEY") {
+            return@withContext "خطأ: لم يتم ضبط مفتاح Gemini في إعدادات التطبيق."
         }
 
         val modelsToTry = listOf(TEXT_MODEL, FALLBACK_TEXT_MODEL).distinct()
         var lastError = "لم نتمكن من الحصول على رد من الذكاء الاصطناعي."
 
         for (model in modelsToTry) {
-            val url = "$baseUrl/v1beta/models/$model:generateContent"
+            val url = "$BASE_URL/v1beta/models/$model:generateContent"
             try {
                 val requestBodyJson = JSONObject()
 
@@ -215,12 +219,12 @@ object GeminiApiClient {
         mimeType: String,
         useThinking: Boolean = false
     ): String = withContext(Dispatchers.IO) {
-        if (baseUrl.isEmpty() || baseUrl == "https://YOUR_RAILWAY_DOMAIN") {
-            return@withContext "خطأ: لم يتم ضبط رابط الخادم."
+        if (apiKey.isEmpty() || apiKey == "YOUR_GEMINI_API_KEY") {
+            return@withContext "خطأ: لم يتم ضبط مفتاح Gemini في إعدادات التطبيق."
         }
 
         // Determine Model
-        val url = "$baseUrl/v1beta/models/$TEXT_MODEL:generateContent"
+        val url = "$BASE_URL/v1beta/models/$TEXT_MODEL:generateContent"
 
         try {
             val requestBodyJson = JSONObject()
@@ -313,9 +317,9 @@ object GeminiApiClient {
 
     /** Generates an image using the server-configured Gemini image model. */
     suspend fun generateImage(prompt: String, aspectRatio: String = "1:1"): String? = withContext(Dispatchers.IO) {
-        if (baseUrl.isEmpty() || baseUrl == "https://YOUR_RAILWAY_DOMAIN") return@withContext null
+        if (apiKey.isEmpty() || apiKey == "YOUR_GEMINI_API_KEY") return@withContext null
 
-        val url = "$baseUrl/v1beta/models/$IMAGE_MODEL:generateContent"
+        val url = "$BASE_URL/v1beta/models/$IMAGE_MODEL:generateContent?key=$apiKey"
 
         try {
             val requestBodyJson = JSONObject()
@@ -388,11 +392,9 @@ object GeminiApiClient {
         imageBase64: String? = null,
         aspectRatio: String = "16:9"
     ): String? = withContext(Dispatchers.IO) {
-        if (baseUrl.isEmpty() || baseUrl == "https://YOUR_RAILWAY_DOMAIN") return@withContext null
+        if (apiKey.isEmpty() || apiKey == "YOUR_GEMINI_API_KEY") return@withContext null
 
-        // The public proxy does not expose a stable Veo operation yet. Avoid
-        // sending a request to an unavailable model, which only produces 404s.
-        Log.w(TAG, "Video generation is unavailable through the configured proxy.")
+        Log.w(TAG, "Video generation is not supported by the Android Gemini client.")
         return@withContext null
     }
 
@@ -472,7 +474,7 @@ object GeminiApiClient {
         }
 
         // Fallback to Gemini High-Fi speech API if ElevenLabs is not set up or rate limited
-        if (baseUrl.isEmpty() || baseUrl == "https://YOUR_RAILWAY_DOMAIN") return@withContext null
+        if (apiKey.isEmpty() || apiKey == "YOUR_GEMINI_API_KEY") return@withContext null
 
         val fallbackVoice = when (voiceName.lowercase()) {
             "hasan" -> "Puck"
@@ -480,7 +482,7 @@ object GeminiApiClient {
             else -> voiceName
         }
 
-        val url = "$baseUrl/v1beta/models/$TTS_MODEL:generateContent"
+        val url = "$BASE_URL/v1beta/models/$TTS_MODEL:generateContent?key=$apiKey"
 
         try {
             val requestBodyJson = JSONObject()

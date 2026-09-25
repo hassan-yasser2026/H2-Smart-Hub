@@ -13,4 +13,6 @@ local.properties
 my-upload-key.jks
 debug.keystore
 keystore.properties
+app/upload-keystore.jks
+upload_certificate.pem
 app/build/

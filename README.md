@@ -1,24 +1,16 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# H2 Smart Hub
 
-# Run and deploy your AI Studio app
+This repository contains the Android application only. The former React/Vite
+website and its Node/Railway server are no longer part of the project.
 
-This contains everything you need to run your app locally.
+## Android build
 
-View your app in AI Studio: https://ai.studio/apps/776352a4-6d27-43d0-aaf9-e9e22e029b4e
+The Android app reads its Gemini key through the Secrets Gradle Plugin:
 
-## Run Locally
+1. Copy [.env.example](.env.example) to `.env.local`.
+2. Set `GEMINI_API_KEY` to the key used by the app.
+3. Build or run the `app` module from Android Studio, or use `gradlew.bat :app:assembleDebug`.
 
-**Prerequisites:**  Node.js
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app in development mode:
-   `npm run dev`
-4. For a production-like serving test, run:
-   `npm run build`
-   `npm run start`
-
-The server now serves the React app correctly in both dev and production modes and keeps the API endpoints available under `/api/*` and `/v1beta/*`.
+`.env.local` is ignored by Git. The key is placed in the Android build
+configuration, so do not commit it. Restrict the key in Google AI Studio to the
+Android app's package and release certificate where possible.

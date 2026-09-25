@@ -69,6 +69,38 @@
 			"problemMatcher": [
 				"$tsc"
 			]
+		},
+		{
+			"label": "Build Android debug APK",
+			"type": "shell",
+			"command": ".\\gradlew.bat",
+			"args": [
+				"assembleDebug",
+				"--stacktrace"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Install Smart Hub on USB device",
+			"type": "shell",
+			"command": ".\\gradlew.bat",
+			"args": [
+				":app:installDebug"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Install H2 Smart Hub via USB",
+			"type": "shell",
+			"command": ".\\gradlew.bat",
+			"args": [
+				":app:installDebug"
+			],
+			"isBackground": false,
+			"problemMatcher": []
 		}
 	]
 }

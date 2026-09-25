@@ -74,27 +74,25 @@ fun AppUi(viewModel: AppViewModel) {
     val glowAlpha by infiniteTransition.animateFloat(
         initialValue = 0.0f,
         targetValue = if (isAnimatingLogo) 1.0f else 0.0f,
-        animationSpec = if (isAnimatingLogo) {
-            infiniteRepeatable(
-                animation = tween(800, easing = LinearEasing),
-                repeatMode = RepeatMode.Reverse
-            )
-        } else {
-            tween(0)
-        },
+        animationSpec = infiniteRepeatable<Float>(
+            animation = tween<Float>(
+                durationMillis = if (isAnimatingLogo) 800 else 0,
+                easing = LinearEasing
+            ),
+            repeatMode = RepeatMode.Reverse
+        ),
         label = "logoGlowAlpha"
     )
     val animatedScale by infiniteTransition.animateFloat(
         initialValue = 1.0f,
         targetValue = if (isAnimatingLogo) 1.15f else 1.0f,
-        animationSpec = if (isAnimatingLogo) {
-            infiniteRepeatable(
-                animation = tween(600, easing = FastOutSlowInEasing),
-                repeatMode = RepeatMode.Reverse
-            )
-        } else {
-            tween(0)
-        },
+        animationSpec = infiniteRepeatable<Float>(
+            animation = tween<Float>(
+                durationMillis = if (isAnimatingLogo) 600 else 0,
+                easing = FastOutSlowInEasing
+            ),
+            repeatMode = RepeatMode.Reverse
+        ),
         label = "logoScale"
     )
     val scale by animateFloatAsState(
